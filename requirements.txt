@@ -1,3 +1,8 @@
-PyYAML>=5.4.1
-Pillow>=8.3.1
-tkScrolledFrame>=1.0.4
+altgraph==0.17.3
+pefile==2023.2.7
+Pillow==9.5.0
+pyinstaller==5.10.1
+pyinstaller-hooks-contrib==2023.2
+pywin32-ctypes==0.2.0
+PyYAML==6.0
+tkScrolledFrame==1.0.4

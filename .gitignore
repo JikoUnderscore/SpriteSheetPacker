@@ -1,0 +1,7 @@
+/.idea/*
+/typings/*
+/test/*
+/dist/*
+/build/*
+/proj.sublime-project
+/proj.sublime-workspace
