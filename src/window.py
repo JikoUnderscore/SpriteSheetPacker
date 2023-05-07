@@ -1,18 +1,14 @@
-from __future__ import annotations
-
 import json
 import sys
 import yaml
 import typing
-
-from functools import partial
+import functools
 import webbrowser
 
 import tkinter as tk
-from tkinter.filedialog import askopenfilename, asksaveasfilename, askopenfilenames
+import tkinter.filedialog as tkfd
 from PIL import Image
 from tkscrolledframe import ScrolledFrame
-
 
 
 
@@ -37,10 +33,6 @@ class Window:
         self.root.title('Sprite Sheet Packer')
         self.root.geometry("1280x680")
         self.root.resizable(width=True, height=True)
-        try:
-            self.root.iconbitmap("./../ssm2.ico") # type: ignore
-        except Exception as e:
-            print(e)
         try:
             self.root.iconbitmap('./ssm2.ico') # type: ignore
         except Exception as e:
@@ -78,8 +70,9 @@ class Window:
         self.addrows_column = 0
         self.row_image_y: list[int] = []
 
-        self.last_number_in_file: None | str = None
+        # self.last_number_in_file: None | str = None
         self.addedbundle_row = 0
+        self.row = 0
         self.mb = MenuBar(self)
 
         self.focus_row = 0
@@ -138,13 +131,14 @@ class Window:
             new_image.show()
 
     def add_rows(self) -> None:
-        filez = askopenfilenames(title='Choose a file')
+        filez = tkfd.askopenfilenames(title='Choose a file')
 
         self.addrows_column = 0
         self.row_image_y.append(0)
         for path in filez:
             self._add_row(path)
         self.addedbundle_row += 1
+        self.row += 1
 
         if self.autoupdate_int.get():
             self.update_cells()
@@ -185,7 +179,7 @@ class Window:
         y_l.grid(row=self.rows_added, column=11)
         y.grid(row=self.rows_added, column=12)
 
-        pop_b = tk.Button(self.inner_frame, text='pop', command=partial(self.remove_row, self.rows_added), font=('Helvetica', '7'), width=5)
+        pop_b = tk.Button(self.inner_frame, text='pop', command=functools.partial(self.remove_row, self.rows_added), font=('Helvetica', '7'), width=5)
         pop_b.grid(row=self.rows_added, column=14)
 
 
@@ -297,7 +291,7 @@ class Window:
         if not self.controlers:
             return
         new_image: Image.Image = self._proses_img()
-        saveimgage_location: str = asksaveasfilename(
+        saveimgage_location: str = tkfd.asksaveasfilename(
             initialfile="Untitle.png",
             defaultextension=".png",
             filetypes=[("All files", "*.*"),
@@ -330,7 +324,7 @@ class Window:
                 'x': x_start,
             }
 
-        saveimgage_location: str = asksaveasfilename(
+        saveimgage_location: str = tkfd.asksaveasfilename(
             initialfile="Untitle.yaml",
             defaultextension=".yaml",
             filetypes=[("All files", "*.*"),
@@ -391,7 +385,7 @@ class MenuBar:
     def save_table(self) -> None:
         if not self.windowObj.controlers:
             return
-        save_file_name: str = asksaveasfilename(
+        save_file_name: str = tkfd.asksaveasfilename(
             initialfile="Untitle.csv",
             defaultextension=".csv",
             filetypes=[("All files", "*.*"),
@@ -417,7 +411,7 @@ class MenuBar:
                 sf.write(f'{img_row},{img_col},{filepath},{sprite_frame},{x_start},{y_start}\n')
 
     def load_tabel(self) -> None:
-        csv_location: str = askopenfilename(title="Open CSV")
+        csv_location: str = tkfd.askopenfilename(title="Open CSV")
         if csv_location != '':
             self.windowObj.controlers.clear()
             self.windowObj.rows_added = 0
@@ -460,7 +454,7 @@ class MenuBar:
                     e6.grid(row=self.windowObj.rows_added, column=12)
 
                     b = tk.Button(self.windowObj.inner_frame, text='pop',
-                                  command=partial(self.windowObj.remove_row, self.windowObj.rows_added),
+                                  command=functools.partial(self.windowObj.remove_row, self.windowObj.rows_added),
                                   font=('Helvetica', '7'), width=5)
                     b.grid(row=self.windowObj.rows_added, column=14)
 
@@ -542,7 +536,7 @@ class MenuBar:
             e6.grid(row=self.windowObj.rows_added, column=12)
 
             b = tk.Button(self.windowObj.inner_frame, text='pop',
-                          command=partial(self.windowObj.remove_row, self.windowObj.rows_added), font=('Helvetica', '7'),
+                          command=functools.partial(self.windowObj.remove_row, self.windowObj.rows_added), font=('Helvetica', '7'),
                           width=5)
             b.grid(row=self.windowObj.rows_added, column=14)
 
@@ -552,6 +546,5 @@ class MenuBar:
             l3.grid(row=self.windowObj.rows_added, column=15)
             ind.grid(row=self.windowObj.rows_added, column=16)
 
-            self.windowObj.controlers[self.windowObj.rows_added] = WidgetRow(row, e1, col, e2, e3, l1, e4, l2, e6, b, l3,
-                                                                             ind)
+            self.windowObj.controlers[self.windowObj.rows_added] = WidgetRow(row, e1, col, e2, e3, l1, e4, l2, e6, b, l3, ind)
             self.windowObj.rows_added += 1
