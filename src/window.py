@@ -34,7 +34,7 @@ class WidgetRow(typing.NamedTuple):
 class Window:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title('Sprite Sheet Maker')
+        self.root.title('Sprite Sheet Packer')
         self.root.geometry("1280x680")
         self.root.resizable(width=True, height=True)
         try:
