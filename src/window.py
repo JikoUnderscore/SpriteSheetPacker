@@ -188,9 +188,19 @@ class Window:
         pop_b = tk.Button(self.inner_frame, text='pop', command=partial(self.remove_row, self.rows_added), font=('Helvetica', '7'), width=5)
         pop_b.grid(row=self.rows_added, column=14)
 
+
+        name = file_name.split('.')[0]
+        first_number = len(name)
+        for i, n in enumerate(name):
+            if n.isdigit():
+                first_number = i
+                break
+
+        animation_name = file_name[:first_number]
+
         frames_l = tk.Label(self.inner_frame, text="frames")
         frame_name = tk.Entry(self.inner_frame, width=30)
-        frame_name.insert(0, f"{file_name.split('.')[0]}_n{self.addrows_column+1}")
+        frame_name.insert(0, f"{animation_name}_n{self.row}")
         frames_l.grid(row=self.rows_added, column=15)
         frame_name.grid(row=self.rows_added, column=16)
 
