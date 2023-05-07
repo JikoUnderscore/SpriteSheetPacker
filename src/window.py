@@ -398,6 +398,11 @@ class MenuBar:
                        ("CSV files", "*.csv")]
         )
         with open(save_file_name, "w", encoding='utf-8') as sf:
+
+            row_y = [str(y) for y in self.windowObj.row_image_y]
+            sf.write(",".join(row_y))
+            sf.write("\n")
+
             for row in self.windowObj.controlers.values():
                 img_row = row.row_entry.get()
                 img_col = row.col_entry.get()
@@ -417,8 +422,12 @@ class MenuBar:
             self.windowObj.controlers.clear()
             self.windowObj.rows_added = 0
 
-            with open(csv_location, 'r') as fr:
-                for csvRow in fr:
+            with open(csv_location, 'r') as rf:
+                fr = rf.readlines()
+
+                self.windowObj.row_image_y = [int(t.strip()) for t in fr[0].split(",")]
+
+                for csvRow in fr[1:]:
                     csv = csvRow.split(',')
                     self.windowObj.update_buttons_locatons()
 
