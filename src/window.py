@@ -4,15 +4,16 @@ import yaml
 import typing
 import functools
 import webbrowser
+import tkscrolledframe as tksf
 
 import tkinter as tk
 import tkinter.filedialog as tkfd
-from PIL import Image
-from tkscrolledframe import ScrolledFrame
-
+import PIL.Image as PILImage
 
 
 class WidgetRow(typing.NamedTuple):
+    wingets_id: int
+    bundles_id: int
     row_l: tk.Label
     row_entry: tk.Entry
     col_l: tk.Label
@@ -27,377 +28,414 @@ class WidgetRow(typing.NamedTuple):
     frames_entry: tk.Entry
 
 
+
 class Window:
+    root = tk.Tk()
+
     def __init__(self):
-        self.root = tk.Tk()
-        self.root.title('Sprite Sheet Packer')
-        self.root.geometry("1280x680")
-        self.root.resizable(width=True, height=True)
+        Window.root.title("Sprite sheet Packer")
+        Window.root.geometry("1280x680")
+        Window.root.resizable(width=True, height=True)
+
         try:
-            self.root.iconbitmap('./ssm2.ico') # type: ignore
+            Window.root.iconbitmap('./ssm2.ico') # type: ignore
         except Exception as e:
             print(e)
-        sf: ScrolledFrame = ScrolledFrame(self.root, width=680, height=680)
-        sf.pack(side="top", expand=1, fill="both") # type: ignore
-        # sf.bind_arrow_keys(self.root)
-        sf.bind_scroll_wheel(self.root) # type: ignore
 
-        self.inner_frame: tk.Frame = typing.cast(tk.Frame, sf.display_widget(tk.Frame)) # type: ignore
+        sf = tksf.ScrolledFrame(Window.root, width=680, height=680)
+        sf.pack(side=tk.TOP ,expand=1, fill=tk.BOTH)
+
+        self.inner_frame = typing.cast(tk.Frame, sf.display_widget(tk.Frame)) # type: ignore
         self.offset = 0
+        self.widgets_row: dict[int, dict[int, WidgetRow]] = dict(dict())
+        self.wingets_unique_id = 0
+        self.total_width_of_save_image = 0
+        self.total_height_of_save_image = 0
+        self.max_row_height: list[int] = []
 
-        self.controlers: dict[int, WidgetRow] = {}
-        self.list_frame_id: list[str] = []
-
-        self.total_width_of_save_image, self.total_height_of_save_image = 0, 0
-
-        self.add_multiple = tk.Button(self.inner_frame, command=self.add_rows, text='Add images')
-        self.update = tk.Button(self.inner_frame, command=self.update_cells, text='Update')
-        self.save = tk.Button(self.inner_frame, command=self.save_img, text='Save image!')
-        self.save_yaml_json = tk.Button(self.inner_frame, command=self.save_yaml_or_json, text='Export yaml or json!')
-        self.view = tk.Button(self.inner_frame, command=self.view_image, text='View')
+        self.add_multi = tk.Button(self.inner_frame, text="Add images", command=self.add_rows)
+        self.update = tk.Button(self.inner_frame, text="Update", command=self.update_cells)
+        self.save = tk.Button(self.inner_frame, text="Save image!", command=lambda: save_image(self))
+        self.save_yaml_json = tk.Button(self.inner_frame, text="Export yaml or json!", command=lambda: save_yaml_or_json(self))
+        self.view = tk.Button(self.inner_frame, text="View", command=lambda: view_image(self))
         self.autoupdate_int = tk.IntVar()
-        self.auto_update_checkbox = tk.Checkbutton(self.inner_frame, text='auto update', variable=self.autoupdate_int)
+        self.auto_update_checkbox = tk.Checkbutton(self.inner_frame, text="auto update", variable=self.autoupdate_int)
+        self.show_top_and_bottom_line = tk.IntVar()
+        self.show_top_and_bottom_line_checkbox = tk.Checkbutton(self.inner_frame, text="Show top(blue) and bottom(red) borders", variable=self.show_top_and_bottom_line)
 
-        self.add_multiple.grid(row=self.offset, column=4, columnspan=2)
-        self.update.grid(row=self.offset, column=8, columnspan=2)
-        self.auto_update_checkbox.grid(row=self.offset, column=10, columnspan=6)
+        # list_items = tk.Variable(value=self.max_row_height)
+        self.list_of_row_max_y = tk.Listbox(self.inner_frame, width=10, height=5, state=tk.DISABLED, exportselection=False) # listvariable=list_items
+        self.list_of_row_max_y.bind("<<ListboxSelect>>", lambda event: onselect(event, self.max_row_height, (Window.root.winfo_x() + Window.root.winfo_width()) // 2, (Window.root.winfo_y() + Window.root.winfo_height()) // 2))
+        self.overide_col_heights = tk.IntVar()
+        self.overide_col_heights_checkbox = tk.Checkbutton(self.inner_frame, text="Overide images y(height) with values of the table", variable=self.overide_col_heights)
+
+        self.add_multi.grid(row=self.offset, column=0, columnspan=2)
+        self.update.grid(row=self.offset, column=4, columnspan=2)
+        self.auto_update_checkbox.grid(row=self.offset, column=6, columnspan=3)
+        self.show_top_and_bottom_line_checkbox.grid(row=self.offset, column=10, columnspan=10)
 
         self.save.grid(row=self.offset + 1, column=0, columnspan=2)
         self.save_yaml_json.grid(row=self.offset + 1, column=4, columnspan=2)
         self.view.grid(row=self.offset + 1, column=8, columnspan=4)
+        self.list_of_row_max_y.grid(row=self.offset+2, column=0, columnspan=4)
+        self.overide_col_heights_checkbox.grid(row=self.offset+3, column=0, columnspan=5)
 
-        self.rows_added = 0
-        self.addrows_column = 0
-        self.row_image_y: list[int] = []
+        begining_menu_bar(Window.root, self)
 
-        # self.last_number_in_file: None | str = None
-        self.addedbundle_row = 0
-        self.row = 0
-        self.mb = MenuBar(self)
-
-        self.focus_row = 0
-        self.focus_col = 0
-        self.root.bind("<Up>", lambda _: self._arrow_move_row(-1))
-        self.root.bind("<Down>", lambda _: self._arrow_move_row(1))
-
-        self.root.bind("<Left>", lambda _: self._arrow_move_col(0))
-        self.root.bind("<Right>", lambda _: self._arrow_move_col(1))
-
-        self.bottom_stripe = tk.Label(self.root, text='http://www.paypal.me/', relief=tk.SUNKEN, anchor=tk.W, fg='blue')
-        self.bottom_stripe.bind("<Button-1>", lambda _: webbrowser.open_new("http://www.paypal.me/JikoUnderscore/1"))
-        self.bottom_stripe.place(anchor=tk.S, relx=0.50, rely=1, relwidth=1)
-
-    def _arrow_move_row(self, direction: int):
-        self._get_curent_focuss()
-
-        row: int = self.focus_row + direction
-        if row < 0:
-            row = 0
-        if row > (len_rows := len(self.controlers) - 1):
-            row = len_rows
-
-        wig: WidgetRow = self.controlers[row]
-        if self.focus_col == 0:
-            wig.row_entry.focus_set()
-            wig.row_entry.selection_range(0, tk.END)
-        elif self.focus_col == 1:
-            wig.col_entry.focus_set()
-            wig.col_entry.selection_range(0, tk.END)
-
-    def _arrow_move_col(self, direction: int):
-        self._get_curent_focuss()
-
-        wig: WidgetRow = self.controlers[self.focus_row]
-
-        if direction == 0:
-            wig.row_entry.focus_set()
-            wig.row_entry.selection_range(0, tk.END)
-        elif direction == 1:
-            wig.col_entry.focus_set()
-            wig.col_entry.selection_range(0, tk.END)
-
-    def _get_curent_focuss(self):
-        for index, wig in enumerate(self.controlers.values()):
-            if wig.col_entry is self.root.focus_get() or wig.row_entry is self.root.focus_get():
-                self.focus_row = index
-                if wig.col_entry is self.root.focus_get():
-                    self.focus_col = 1
-                if wig.row_entry is self.root.focus_get():
-                    self.focus_col = 0
-
-    def view_image(self) -> None:
-        if self.controlers:
-            new_image: Image.Image = self._proses_img()
-            new_image.show()
-
-    def add_rows(self) -> None:
-        filez = tkfd.askopenfilenames(title='Choose a file')
-
-        self.addrows_column = 0
-        self.row_image_y.append(0)
-        for path in filez:
-            self._add_row(path)
-        self.addedbundle_row += 1
-        self.row += 1
-
-        if self.autoupdate_int.get():
-            self.update_cells()
+        bottom_stripe = tk.Label(Window.root, text='http://www.paypal.me/', relief=tk.SUNKEN, anchor=tk.W, fg='blue')
+        bottom_stripe.bind("<Button-1>", lambda _: webbrowser.open_new("http://www.paypal.me/JikoUnderscore/1"))
+        bottom_stripe.place(anchor=tk.S, relx=0.50, rely=1, relwidth=1)
 
 
-    def _add_row(self, imgLoc: str) -> None:
-        self.update_buttons_locatons()
-
-        file_name: str = imgLoc.split(r'/')[-1]
-
-        row = tk.Label(self.inner_frame, text='row')
-        image_row = tk.Entry(self.inner_frame, width=5)
-        image_row.insert(0, str(self.addedbundle_row))
-        row.grid(row=self.rows_added, column=0)
-        image_row.grid(row=self.rows_added, column=1)
-
-
-        col = tk.Label(self.inner_frame, text='col')
-        image_col = tk.Entry(self.inner_frame, width=5)
-        image_col.insert(0, str(self.addrows_column))
-        col.grid(row=self.rows_added, column=2)
-        image_col.grid(row=self.rows_added, column=3)
-
-
-        image_path = tk.Entry(self.inner_frame, width=len(imgLoc))
-        image_path.insert(0, imgLoc)
-        image_path.grid(row=self.rows_added, column=4, columnspan=3)
-
-        x_l = tk.Label(self.inner_frame, text='x')
-        x = tk.Entry(self.inner_frame, width=5)
-        x.insert(0, "0")
-        x_l.grid(row=self.rows_added, column=8)
-        x.grid(row=self.rows_added, column=9)
-
-        y_l = tk.Label(self.inner_frame, text='y')
-        y = tk.Entry(self.inner_frame, width=5)
-        y.insert(0, "0")
-        y_l.grid(row=self.rows_added, column=11)
-        y.grid(row=self.rows_added, column=12)
-
-        pop_b = tk.Button(self.inner_frame, text='pop', command=functools.partial(self.remove_row, self.rows_added), font=('Helvetica', '7'), width=5)
-        pop_b.grid(row=self.rows_added, column=14)
-
-
-        name = file_name.split('.')[0]
-        first_number = len(name)
-        for i, n in enumerate(name):
-            if n.isdigit():
-                first_number = i
-                break
-
-        animation_name = file_name[:first_number]
-
-        frames_l = tk.Label(self.inner_frame, text="frames")
-        frame_name = tk.Entry(self.inner_frame, width=30)
-        frame_name.insert(0, f"{animation_name}_n{self.row}")
-        frames_l.grid(row=self.rows_added, column=15)
-        frame_name.grid(row=self.rows_added, column=16)
-
-
-
-        image: Image.Image = Image.open(imgLoc)
-        _, height = image.size
-        image.close()
-        last_height = self.row_image_y[self.addedbundle_row] if self.row_image_y else 0
-
-
-        self.row_image_y[self.addedbundle_row] = max(last_height, height)
-        self.controlers[self.rows_added] = WidgetRow(row, image_row, col, image_col, image_path, x_l, x, y_l, y, pop_b, frames_l, frame_name)
-        self.rows_added += 1
-        self.addrows_column += 1
-
-    def remove_row(self, row: int) -> None:
-        ele: tk.Entry | tk.Button | tk.Label | tk.Checkbutton
-
-        for ele in self.controlers[row]:
-            ele.destroy()
-        del self.controlers[row]
-        self.rows_added -= 1
-
-    def update_buttons_locatons(self) -> None:
+    def update_buttons_locatons(self):
         self.offset += 1
-        self.add_multiple.grid(row=self.offset, column=4, columnspan=2)
-        self.update.grid(row=self.offset, column=8, columnspan=2)
-        self.auto_update_checkbox.grid(row=self.offset, column=10, columnspan=6)
+        self.add_multi.grid(row=self.offset , column=0, columnspan=2)
+        self.update.grid(row=self.offset , column=4, columnspan=2)
+        self.auto_update_checkbox.grid(row=self.offset , column=6, columnspan=3)
+        self.show_top_and_bottom_line_checkbox.grid(row=self.offset, column=10, columnspan=10)
 
         self.save.grid(row=self.offset + 1, column=0, columnspan=2)
         self.save_yaml_json.grid(row=self.offset + 1, column=4, columnspan=2)
         self.view.grid(row=self.offset + 1, column=8, columnspan=2)
+        self.list_of_row_max_y.grid(row=self.offset+2, column=0, columnspan=4)
+        self.overide_col_heights_checkbox.grid(row=self.offset+3, column=0, columnspan=5)
 
-    def update_cells(self, replace_xy_values:bool=True) -> None:
-        if not self.controlers:
+
+    def remove_row(self, wingets_unique_id: int, bundles_id: int):
+        for wig in  self.widgets_row[wingets_unique_id][bundles_id]:
+            if not isinstance(wig, int) :
+                wig.destroy()
+
+        del self.widgets_row[wingets_unique_id][bundles_id]
+        self.offset -= 1
+
+
+    def add_rows(self):
+        frame_files = tkfd.askopenfilenames(title="Choose a file")
+
+        bundles_id = 0
+        self.widgets_row[self.wingets_unique_id] = {}
+        for path in frame_files:
+            file_name = path.split(r"/")[-1]
+
+            first_number = len(file_name)
+            for i, n in enumerate(file_name):
+                if n.isdigit():
+                    first_number = i
+                    break
+
+            row_set_all_wigets(self, str(self.wingets_unique_id), str(bundles_id), path, "0", "0", self.wingets_unique_id, bundles_id, f"{file_name[:first_number]}_n{self.wingets_unique_id}")
+            bundles_id += 1
+            self.update_buttons_locatons()
+
+        self.wingets_unique_id += 1
+
+
+    def update_cells(self):
+        if not self.widgets_row:
             return
-        self.list_frame_id.clear()
         self.total_width_of_save_image = 0
         self.total_height_of_save_image = 0
+        self.max_row_height.clear()
 
+        for i, bundle in enumerate(self.widgets_row.values()):
+            self.max_row_height.append(0)
+            for row in bundle.values():
+                row_pos = int(row.row_entry.get())
+                col_pos = int(row.col_entry.get())
 
-        for row in self.controlers.values():
-            row_pos = int(row.row_entry.get())
-            col_pos = int(row.col_entry.get())
+                image_path: str = row.img_path.get()
 
-            image_path: str = row.img_path.get()
+                image = PILImage.open(image_path)
+                width, height = image.size
+                image.close()
 
-            self.list_frame_id.append(row.frames_entry.get())
+                last_height = self.max_row_height[i]
+                self.max_row_height[i] = max(last_height, height)
 
-            image: Image.Image = Image.open(image_path)
-            width, height = image.size
-            image.close()
+                y = sum(self.max_row_height[0:row_pos]) if row_pos >= 1 else row_pos * height
 
-
-            y = sum(self.row_image_y[0:row_pos]) if row_pos >= 1 else row_pos * height
-
-            if replace_xy_values:
                 row.x_entry.delete(0, tk.END)
                 row.x_entry.insert(0, str(col_pos * width))
 
                 row.y_entry.delete(0, tk.END)
                 row.y_entry.insert(0, str(y))
 
-            h = int(row.y_entry.get()) + height
-            w = int(row.x_entry.get()) + width
+                h = int(row.y_entry.get()) + height
+                w = int(row.x_entry.get()) + width
 
-            if h > self.total_height_of_save_image:
-                self.total_height_of_save_image = h
-            if w > self.total_width_of_save_image:
-                self.total_width_of_save_image = w
+                if h > self.total_height_of_save_image:
+                    self.total_height_of_save_image = h
+                if w > self.total_width_of_save_image:
+                    self.total_width_of_save_image = w
+
+        items_string = [str(s) for s in self.max_row_height]
+        self.list_of_row_max_y.config(state=tk.NORMAL)
+        self.list_of_row_max_y.delete(0,tk.END)
+        self.list_of_row_max_y.config(height=len(items_string) + 1)
+        for i, s in enumerate(items_string):
+            self.list_of_row_max_y.insert(i, s)
 
 
 
-    def _proses_img(self) -> Image.Image:
-        if self.autoupdate_int.get():
-            self.update_cells()
+def onselect(event: "tk.Event[tk.Listbox]", max_row_height: list[int], top_level_offset_x: int, top_level_offset_y: int):
+    wiget = event.widget
 
-        if self.total_height_of_save_image == 0 or self.total_width_of_save_image == 0:
-            self.update_cells(replace_xy_values=False)
+    enter_window = tk.Toplevel()
+    enter_window.geometry(f"300x100+{top_level_offset_x}+{top_level_offset_y}")
+    tk.Label(enter_window, text="Enter the new value and close the window.").pack()
 
-        new_output_image = Image.new('RGBA', (self.total_width_of_save_image, self.total_height_of_save_image))
-        for row in self.controlers.values():
+    entry = tk.Entry(enter_window)
+    entry.focus()
+    entry.pack()
+
+    index = typing.cast(tuple[int], wiget.curselection()) # type: ignore
+    data = typing.cast(str, wiget.get(index[0])) # type: ignore
+    event.widget.config(state=tk.DISABLED)
+    # event.widget.focus_set()
+    entry.insert(0, data)
+
+
+    def enter_window_destroy():
+        event.widget.config(state=tk.NORMAL)
+        wiget.delete(index[0])
+        wiget.insert(index[0], entry.get())
+        max_row_height[index[0]] = int(entry.get())
+        enter_window.destroy()
+
+    enter_window.protocol("WM_DELETE_WINDOW", enter_window_destroy)
+    enter_window.mainloop()
+
+
+def row_set_all_wigets(w: Window, row_n: str, col_n: str, path: str, x_n: str, y_n: str, wingets_unique_id: int, bundles_id: int, name_f: str):
+        row_l = tk.Label(w.inner_frame, text="row")
+        image_row = tk.Entry(w.inner_frame, width=5)
+        image_row.insert(0, row_n)
+        row_l.grid(row=w.offset, column=0)
+        image_row.grid(row=w.offset, column=1)
+
+        col_l = tk.Label(w.inner_frame, text="col")
+        image_col = tk.Entry(w.inner_frame, width=5)
+        image_col.insert(0, col_n)
+        col_l.grid(row=w.offset, column=2)
+        image_col.grid(row=w.offset, column=3)
+
+        image_path = tk.Entry(w.inner_frame, width=len(path))
+        image_path.insert(0, path)
+        image_path.grid(row=w.offset, column=4, columnspan=3)
+
+        x_l = tk.Label(w.inner_frame, text="x")
+        x = tk.Entry(w.inner_frame, width=5)
+        x.insert(0, x_n)
+        x_l.grid(row=w.offset, column=8)
+        x.grid(row=w.offset, column=9)
+
+        y_l = tk.Label(w.inner_frame, text="y")
+        y = tk.Entry(w.inner_frame, width=5)
+        y.insert(0, y_n)
+        y_l.grid(row=w.offset, column=11)
+        y.grid(row=w.offset, column=12)
+
+
+        pop_b = tk.Button(w.inner_frame, text="pop", command=functools.partial(w.remove_row, wingets_unique_id, bundles_id), font=('Helvetica', '7'), width=5)
+        pop_b.grid(row=w.offset, column=14)
+
+        frames_l = tk.Label(w.inner_frame, text="frames")
+        frame_name = tk.Entry(w.inner_frame, width=30)
+        frame_name.insert(0, name_f)
+        frames_l.grid(row=w.offset, column=15)
+        frame_name.grid(row=w.offset, column=16)
+
+        w.widgets_row[wingets_unique_id][bundles_id] = WidgetRow(w.wingets_unique_id, bundles_id, row_l, image_row, col_l, image_col, image_path, x_l, x, y_l, y, pop_b, frames_l, frame_name)
+
+
+
+
+def view_image(w: Window):
+    if not w.widgets_row:
+        return
+    new_image = proses_image(w)
+    new_image.show()
+
+
+    # fotoimg =  ImageTk.PhotoImage(proses_image(w))
+    # image_window = tk.Toplevel(Window.root)
+    # image_window.title("The Rules")
+    # image_window.geometry(f"{w.total_width_of_save_image*2}x{w.total_height_of_save_image*2}")
+
+    # # rule_window.pack()
+    # # the_rules = tk.Label(rule_window, text="Here are the rules...", foreground="black")
+    # # the_rules.grid(row=0, column=0, columnspan=3)
+
+    # # file_format = 'png' # The file extension of the sourced data
+    # canvas = tk.Canvas(image_window, width=w.total_width_of_save_image, height=w.total_height_of_save_image, bg="white")
+    # canvas.pack()
+    # canvas.create_image(0, 0, anchor=tk.NW, image=fotoimg) # type: ignore
+    # # canvas.create_rectangle(0, 0, 300, 300, fill="red")
+    # # canvas.bind("<MouseWheel>", lambda e: do_zoom(e, canvas))
+    # canvas.bind('<ButtonPress-1>', lambda event: canvas.scan_mark(event.x, event.y)) # type: ignore
+    # canvas.bind("<B1-Motion>", lambda event: canvas.scan_dragto(event.x, event.y, gain=1)) # type: ignore
+
+
+    # image_window.mainloop()
+
+
+def proses_image(w: Window) -> PILImage.Image:
+    if w.autoupdate_int.get():
+        w.update_cells()
+
+    if w.total_height_of_save_image == 0 or w.total_width_of_save_image == 0:
+        w.update_cells()
+
+    new_output_image = PILImage.new('RGBA', (w.total_width_of_save_image, w.total_height_of_save_image))
+    # new_output_image = pilimage.alpha_composite(pilimage.new("RGBA", (w.total_width_of_save_image, w.total_height_of_save_image)), new_output_image.convert("RGBA"))
+
+    for i, bundle in enumerate(w.widgets_row.values()):
+        for row in bundle.values():
             img: str = row.img_path.get()
 
-            one_sprite = Image.open(img)
+            one_sprite = PILImage.open(img).convert("RGBA")
+            width, height = one_sprite.size
 
-            new_output_image.paste(one_sprite, (int(row.x_entry.get()), int(row.y_entry.get())))
+
+            if w.show_top_and_bottom_line.get():
+                for x in range(width):
+                    pixl = typing.cast(int, one_sprite.getpixel((x, height-1))) # type: ignore
+                    if pixl != 0:
+                        one_sprite.putpixel((x, height-1), (255,0,0))
+                for xx in range(width):
+                    pixl = typing.cast(int ,one_sprite.getpixel((xx-1, 0))) # type: ignore
+                    if pixl != 0:
+                        one_sprite.putpixel((xx, 0), (0,0,255))
+
+
+            y_pos = sum(w.max_row_height[:i] ) if w.overide_col_heights.get() else int(row.y_entry.get())
+            new_output_image.paste(one_sprite, (int(row.x_entry.get()), y_pos), one_sprite) # type: ignore
 
             one_sprite.close()
-        return new_output_image
+    return new_output_image
 
-    def save_img(self) -> None:
-        if not self.controlers:
-            return
-        new_image: Image.Image = self._proses_img()
-        saveimgage_location: str = tkfd.asksaveasfilename(
-            initialfile="Untitle.png",
-            defaultextension=".png",
-            filetypes=[("All files", "*.*"),
-                       ("PNG files", "*.png"),
-                       ("JPG files", "*.jpg")])
-        if saveimgage_location != '':
-            new_image.save(saveimgage_location)
 
-    def save_yaml_or_json(self) -> None:
-        if not self.controlers:
-            return
+def save_image(w: Window):
+    if not w.widgets_row:
+        return
 
-        if self.autoupdate_int.get():
-            self.update_cells()
-        ymalfile: dict[str, dict[str, dict[str, int]]] = {non: {} for non in self.list_frame_id}
+    new_image = proses_image(w)
+    saveimgage_location: str = tkfd.asksaveasfilename(
+        initialfile="Untitle.png",
+        defaultextension=".png",
+        filetypes=[("PNG files", "*.png"),
+                   ("JPG files", "*.jpg")])
+    if saveimgage_location != '':
+        new_image.save(saveimgage_location)
 
-        for row in self.controlers.values():
+
+def save_yaml_or_json(w: Window):
+    if not w.widgets_row:
+        return
+
+    if w.autoupdate_int.get():
+        w.update_cells()
+    outerdict: dict[str, dict[str, dict[str, int]]] = dict(dict(dict()))
+
+
+
+    for bundle in w.widgets_row.values():
+        middle: dict[str, dict[str, int]] = dict(dict())
+        for row in bundle.values():
             img_path: str = row.img_path.get()
-            img: str = img_path.split(r'/')[-1].rsplit('.', 1)[0]
+            file_name = img_path.split(r"/")[-1]
 
-            width, height = Image.open(img_path).size
+            first_number = len(file_name)
+            for i, n in enumerate(file_name):
+                if n.isdigit():
+                    first_number = i
+                    break
+
+            img = f"{file_name[:first_number]}_n{row.bundles_id}"
+
+            width, height = PILImage.open(img_path).size
 
             x_start = int(row.x_entry.get())
             y_start = int(row.y_entry.get())
 
-            ymalfile[row.frames_entry.get()][img] = {
+            most_inner = {
                 'h': height,
                 'w': width,
                 'y': y_start,
                 'x': x_start,
             }
 
-        saveimgage_location: str = tkfd.asksaveasfilename(
-            initialfile="Untitle.yaml",
-            defaultextension=".yaml",
-            filetypes=[("All files", "*.*"),
-                       ("YAML files", "*.yaml"),
-                       ("JSON files", "*.json")])
-        if saveimgage_location != '':
-            with open(saveimgage_location, "w") as f:
-                if saveimgage_location.endswith(".yaml"):
-                    yaml.dump(ymalfile, f, default_flow_style=None)
-                else:
-                    json.dump(ymalfile, f, ensure_ascii=False, indent=4)
+            middle[img] = most_inner
+
+            outerdict[row.frames_entry.get()] = middle
+        del middle
 
 
-class MenuBar:
-    def __init__(self, windowObj: Window):
-        menubar = tk.Menu(windowObj.root)
-        windowObj.root.config(menu=menubar)
+    saveimgage_location: str = tkfd.asksaveasfilename(
+        initialfile="Untitle.yaml",
+        defaultextension=".yaml",
+        filetypes=[("YAML files", "*.yaml"),
+                   ("JSON files", "*.json"),
+                   ("All files", "*.*")])
+    if saveimgage_location != '':
+        with open(saveimgage_location, "w") as f:
+            if saveimgage_location.endswith(".yaml"):
+                yaml.dump(outerdict, f, default_flow_style=None)
+            else:
+                json.dump(outerdict, f, ensure_ascii=False, indent=4)
 
-        self.windowObj = windowObj
 
-        file = tk.Menu(menubar, tearoff=0)
-        file.add_command(label='Save to CSV', command=self.save_table)
-        file.add_command(label='Open CSV', command=self.load_tabel)
-        file.add_separator()
-        file.add_command(label="Exit", command=sys.exit)
+def begining_menu_bar(root: tk.Tk, w: Window):
+    menubar = tk.Menu(root)
+    root.config(menu=menubar)
 
-        menubar.add_cascade(label="File", menu=file)
+    file = tk.Menu(menubar, tearoff=0)
+    file.add_command(label="Save to CSV", command=lambda: save_table(w))
+    file.add_command(label="Load from CSV", command=lambda: load_table(w))
+    file.add_separator()
+    file.add_command(label="Exit", command=sys.exit)
 
-        editmenu = tk.Menu(menubar, tearoff=0)
-        editmenu.add_command(label="Cut", accelerator="Ctrl+X",
-                             command=lambda: windowObj.root.focus_get().event_generate('<<Cut>>')) # type: ignore
-        editmenu.add_command(label="Copy", accelerator="Ctrl+C",
-                             command=lambda: windowObj.root.focus_get().event_generate('<<Copy>>')) # type: ignore
-        editmenu.add_command(label="Paste", accelerator="Ctrl+V",
-                             command=lambda: windowObj.root.focus_get().event_generate('<<Paste>>')) # type: ignore
-        editmenu.add_command(label="Select all", accelerator="Ctrl+A",
-                             command=lambda: windowObj.root.focus_get().event_generate('<<SelectAll>>')) # type: ignore
-        menubar.add_cascade(label="Edit", menu=editmenu)
+    menubar.add_cascade(label="File", menu=file)
 
-        options = tk.Menu(menubar, tearoff=0)
-        sort = tk.Menu(options, tearoff=0)
-        sort.add_command(label="Sort by row", command=self.sort_x)
-        sort.add_command(label="Sort by col", command=self.sort_y)
-        options.add_cascade(label="Sorting...", menu=sort)
-        options.add_separator()
-        options.add_command(label='Add rows!', accelerator="F2", command=windowObj.add_rows)
-        options.add_command(label='Update!', accelerator="F5", command=windowObj.update_cells)
-        options.add_separator()
-        options.add_command(label='View!', command=windowObj.view_image)
-        options.add_separator()
-        options.add_command(label='Save image!', command=windowObj.save_img)
-        options.add_command(label='Export json or yaml', command=windowObj.save_yaml_or_json)
-        menubar.add_cascade(label="Options", menu=options)
+    editmenu = tk.Menu(menubar, tearoff=0)
+    editmenu.add_command(label="Cut", accelerator="Ctrl+X", command=lambda: root.focus_get().event_generate('<<Cut>>')) # type: ignore
+    editmenu.add_command(label="Copy", accelerator="Ctrl+C", command=lambda: root.focus_get().event_generate('<<Copy>>')) # type: ignore
+    editmenu.add_command(label="Paste", accelerator="Ctrl+V", command=lambda: root.focus_get().event_generate('<<Paste>>')) # type: ignore
+    editmenu.add_command(label="Select all", accelerator="Ctrl+A", command=lambda: root.focus_get().event_generate('<<SelectAll>>')) # type: ignore
+    menubar.add_cascade(label="Edit", menu=editmenu)
 
-        windowObj.root.bind('<F2>', lambda _: windowObj.add_rows())
-        windowObj.root.bind('<F5>', lambda _: windowObj.update_cells())
+    options = tk.Menu(menubar, tearoff=0)
+    # sort = tk.Menu(options, tearoff=0)
+    # sort.add_command(label="Sort by row")
+    # sort.add_command(label="Sort by col")
+    # options.add_cascade(label="Sorting...", menu=sort)
+    options.add_separator()
+    options.add_command(label='Add rows!', accelerator="F2", command=w.add_rows)
+    options.add_command(label='Update!', accelerator="F5", command=w.update_cells)
+    options.add_separator()
+    options.add_command(label='View!', command=lambda: view_image(w))
+    options.add_separator()
+    options.add_command(label='Save image!', command=lambda: save_image(w))
+    options.add_command(label='Export json or yaml', command=lambda: save_yaml_or_json(w))
+    menubar.add_cascade(label="Options", menu=options)
 
-    def save_table(self) -> None:
-        if not self.windowObj.controlers:
-            return
-        save_file_name: str = tkfd.asksaveasfilename(
-            initialfile="Untitle.csv",
-            defaultextension=".csv",
-            filetypes=[("All files", "*.*"),
-                       ("CSV files", "*.csv")]
-        )
-        with open(save_file_name, "w", encoding='utf-8') as sf:
+    root.bind('<F2>', lambda _: w.add_rows())
+    root.bind('<F5>', lambda _: w.update_cells())
 
-            row_y = [str(y) for y in self.windowObj.row_image_y]
-            sf.write(",".join(row_y))
-            sf.write("\n")
 
-            for row in self.windowObj.controlers.values():
+def save_table(w: Window):
+    if not w.widgets_row:
+        return
+    save_file_name: str = tkfd.asksaveasfilename(
+        initialfile="Untitle.csv",
+        defaultextension=".csv",
+        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+    )
+
+    with open(save_file_name, "w", encoding='utf-8') as sf:
+        for bundle in w.widgets_row.values():
+            for row in bundle.values():
                 img_row = row.row_entry.get()
                 img_col = row.col_entry.get()
 
@@ -408,143 +446,59 @@ class MenuBar:
 
                 sprite_frame: str = row.frames_entry.get()
 
-                sf.write(f'{img_row},{img_col},{filepath},{sprite_frame},{x_start},{y_start}\n')
+                sf.write(f"{row.wingets_id},{row.bundles_id},{img_row},{img_col},{filepath},{sprite_frame},{x_start},{y_start}\n")
 
-    def load_tabel(self) -> None:
+
+def load_table(w: Window):
         csv_location: str = tkfd.askopenfilename(title="Open CSV")
         if csv_location != '':
-            self.windowObj.controlers.clear()
-            self.windowObj.rows_added = 0
+            w.widgets_row.clear()
 
             with open(csv_location, 'r') as rf:
                 fr = rf.readlines()
 
-                self.windowObj.row_image_y = [int(t.strip()) for t in fr[0].split(",")]
+                # w.max_row_height = [int(t.strip()) for t in fr[0].split(",")]
+                # w.wingets_unique_id = int(fr[1].strip())
+                w.wingets_unique_id = 0
+                w.offset = 0
 
-                for csvRow in fr[1:]:
+                list_of_bundles: list[list[tuple[str,str,str,str,str,int,int,str]]] = []
+
+                curent_bundle: list[tuple[str,str,str,str,str,int,int,str]] = []
+
+                for csvRow in fr:
                     csv = csvRow.split(',')
-                    self.windowObj.update_buttons_locatons()
+                    # file_name = path.split(r"/")[-1]
+                    row_n=csv[2]
+                    col_n=csv[3]
+                    path=csv[4]
+                    x_n=csv[6]
+                    y_n=csv[7]
+                    wingets_unique_id=int(csv[0].strip())
+                    bundles_id=int(csv[1].strip())
+                    name_f=csv[5]
 
-                    row = tk.Label(self.windowObj.inner_frame, text='row')
-                    e1 = tk.Entry(self.windowObj.inner_frame, width=5)
-                    e1.insert(0, csv[0])
-                    row.grid(row=self.windowObj.rows_added, column=0)
-                    e1.grid(row=self.windowObj.rows_added, column=1)
+                    if bundles_id == 0:
+                        if curent_bundle:
+                            list_of_bundles.append(curent_bundle.copy())
+                        curent_bundle.clear()
 
-                    col = tk.Label(self.windowObj.inner_frame, text='col')
-                    e2 = tk.Entry(self.windowObj.inner_frame, width=5)
-                    e2.insert(0, csv[1])
-                    col.grid(row=self.windowObj.rows_added, column=2)
-                    e2.grid(row=self.windowObj.rows_added, column=3)
+                    curent_bundle.append((row_n, col_n, path, x_n, y_n, wingets_unique_id, bundles_id, name_f))
 
-                    e3 = tk.Entry(self.windowObj.inner_frame, width=len(csv[2]))
-                    e3.insert(0, csv[2])
-                    e3.grid(row=self.windowObj.rows_added, column=4, columnspan=3)
-
-                    l1 = tk.Label(self.windowObj.inner_frame, text='x')
-                    e4 = tk.Entry(self.windowObj.inner_frame, width=5)
-                    e4.insert(0, csv[4])
-                    l1.grid(row=self.windowObj.rows_added, column=8)
-                    e4.grid(row=self.windowObj.rows_added, column=9)
-
-                    l2 = tk.Label(self.windowObj.inner_frame, text='y')
-                    e6 = tk.Entry(self.windowObj.inner_frame, width=5)
-                    e6.insert(0, csv[5])
-                    l2.grid(row=self.windowObj.rows_added, column=11)
-                    e6.grid(row=self.windowObj.rows_added, column=12)
-
-                    b = tk.Button(self.windowObj.inner_frame, text='pop',
-                                  command=functools.partial(self.windowObj.remove_row, self.windowObj.rows_added),
-                                  font=('Helvetica', '7'), width=5)
-                    b.grid(row=self.windowObj.rows_added, column=14)
-
-                    l3 = tk.Label(self.windowObj.inner_frame, text="frames")
-                    ind = tk.Entry(self.windowObj.inner_frame, width=30)
-                    ind.insert(0, csv[3])
-                    l3.grid(row=self.windowObj.rows_added, column=15)
-                    ind.grid(row=self.windowObj.rows_added, column=16)
-
-                    self.windowObj.controlers[self.windowObj.rows_added] = WidgetRow(row, e1, col, e2, e3, l1, e4, l2, e6, b, l3, ind)
-                    self.windowObj.rows_added += 1
-
-    def sort_x(self):
-        if not self.windowObj.controlers:
-            return
-        self._sort()
-
-    def sort_y(self):
-        if not self.windowObj.controlers:
-            return
-        self._sort(1)
-
-    def _sort(self, sort_x=0):
-        temp_container: list[tuple[int, int, str, str, str, str]] = []
-        for row in self.windowObj.controlers.values():
-            img_row: str = row.row_entry.get()
-            img_col: str = row.col_entry.get()
-
-            filepath: str = row.img_path.get()
-
-            x_start: str = row.x_entry.get()
-            y_start: str = row.y_entry.get()
-
-            sprite_frame: str = row.frames_entry.get()
-
-            temp_container.append((int(img_row), int(img_col), filepath, sprite_frame, x_start, y_start))
-
-        ele: tk.Entry | tk.Button | tk.Label
-
-        for widget_row in self.windowObj.controlers.values():
-            for ele in widget_row:
-                ele.destroy()
-
-        self.windowObj.controlers.clear()
-        self.windowObj.rows_added = 0
-
-        other: int = 1 if sort_x == 0 else 0
-        temp_container = sorted(temp_container, key=lambda x: (x[sort_x], x[other]))
-
-        for tmp in temp_container:
-            self.windowObj.update_buttons_locatons()
-
-            row = tk.Label(self.windowObj.inner_frame, text='row')
-            e1 = tk.Entry(self.windowObj.inner_frame, width=5)
-            e1.insert(0, str(tmp[0]))
-            row.grid(row=self.windowObj.rows_added, column=0)
-            e1.grid(row=self.windowObj.rows_added, column=1)
-
-            col = tk.Label(self.windowObj.inner_frame, text='col')
-            e2 = tk.Entry(self.windowObj.inner_frame, width=5)
-            e2.insert(0, str(tmp[1]))
-            col.grid(row=self.windowObj.rows_added, column=2)
-            e2.grid(row=self.windowObj.rows_added, column=3)
-
-            e3 = tk.Entry(self.windowObj.inner_frame, width=len(tmp[2]))
-            e3.insert(0, tmp[2])
-            e3.grid(row=self.windowObj.rows_added, column=4, columnspan=3)
-
-            l1 = tk.Label(self.windowObj.inner_frame, text='x')
-            e4 = tk.Entry(self.windowObj.inner_frame, width=5)
-            e4.insert(0, tmp[4])
-            l1.grid(row=self.windowObj.rows_added, column=8)
-            e4.grid(row=self.windowObj.rows_added, column=9)
-
-            l2 = tk.Label(self.windowObj.inner_frame, text='y')
-            e6 = tk.Entry(self.windowObj.inner_frame, width=5)
-            e6.insert(0, tmp[5])
-            l2.grid(row=self.windowObj.rows_added, column=11)
-            e6.grid(row=self.windowObj.rows_added, column=12)
-
-            b = tk.Button(self.windowObj.inner_frame, text='pop',
-                          command=functools.partial(self.windowObj.remove_row, self.windowObj.rows_added), font=('Helvetica', '7'),
-                          width=5)
-            b.grid(row=self.windowObj.rows_added, column=14)
-
-            l3 = tk.Label(self.windowObj.inner_frame, text="frames")
-            ind = tk.Entry(self.windowObj.inner_frame, width=30)
-            ind.insert(0, tmp[3])
-            l3.grid(row=self.windowObj.rows_added, column=15)
-            ind.grid(row=self.windowObj.rows_added, column=16)
-
-            self.windowObj.controlers[self.windowObj.rows_added] = WidgetRow(row, e1, col, e2, e3, l1, e4, l2, e6, b, l3, ind)
-            self.windowObj.rows_added += 1
+                for bundles in list_of_bundles:
+                    bundles_id = 0
+                    w.widgets_row[w.wingets_unique_id] = {}
+                    for row in bundles:
+                        row_set_all_wigets(w,
+                         row_n=row[0],
+                         col_n=row[1],
+                         path=row[2],
+                         x_n=row[3],
+                         y_n=row[4],
+                         wingets_unique_id=w.wingets_unique_id, # row[5],
+                         bundles_id=row[6],
+                         name_f=row[7]
+                        )
+                        bundles_id += 1
+                        w.update_buttons_locatons()
+                    w.wingets_unique_id += 1
