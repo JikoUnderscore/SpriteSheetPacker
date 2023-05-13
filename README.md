@@ -1,5 +1,7 @@
 # SpriteSheetPacker
-A simple python Sprite sheet maker. It takes separate images and plans them on a new image. Can also export json and yaml files. I make this for my needs.
+A simple python Sprite sheet maker. It takes separate images and plants them on a new image. Can also export json and yaml files. 
+
+I made this for my needs.
 
 ~~Maybe will update it in the future~~
 
@@ -18,10 +20,10 @@ F5 = updates 'x' and 'y' cells.
 
 ***
 
-'row' is the rows of images, 'col' is for the corresponding columns.  
+`row` is the rows of images, `col` is for the corresponding columns.  
 Separate frames (frames) is for the nested dict/json/yaml.
 
-The other fields are auto generated. You can tweek them.
+<!-- The other fields are auto generated. You can tweek them. -->
 
 
 
