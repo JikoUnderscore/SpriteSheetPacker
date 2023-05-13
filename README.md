@@ -31,4 +31,4 @@ The other fields are auto generated. You can tweek them.
 ## USEGE:
 
 Add the frames of a animation useing `Add images` button.   
-If used correctly, each row will be a separate animation.
+If used correctly, each line(row) of the image will be a separate animation.
